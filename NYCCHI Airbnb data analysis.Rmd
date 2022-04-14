@@ -1,0 +1,237 @@
+---
+title: "NYC/CHI Airbnb data analysis"
+author: "Ray Pan yulinp3@illinois.edu & Patina Shi zhans5@illinois.edu"
+date: "4/30/2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    theme: default
+    toc: yes
+---
+
+```{r, setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.align = 'center')
+```
+
+***
+
+# Introduction
+
+People love traveling to metropolis, especially NYC and Chicago. Staying at Airbnb is popular since it is cheaper and safer while offering various travel experiences. We would like to perform a research on this due to the fact that sharing economy is a trend in the modern world and analysis of dataset like this would help us build background information for future researches. Here is some dataset from Airbnb open data about the reservation in NYC in 2019 and Chicago from 2017-2019. The two dataset each contains 15 columns. The Chicago dataset contains 6398 records and the NYCcontains 48896 records. Some important variables include room type, price, coordinates, and availability, etc.
+
+***
+
+# Methods
+
+## Data
+
+```{r, echo=T, message=FALSE}
+# load packages
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(ggpubr)
+library(kableExtra)
+```
+
+
+```{r, echo=TRUE, message=FALSE}
+#import dataset
+chi_airbnb <- read_csv("listings (1).csv")
+nyc_airbnb <- read_csv("AB_NYC_2019 2.csv")
+```
+
+The original NYC airbnb dataset contains one more column than the CHI airbnb dataset and they all contain some NA values in some columns.
+We did some data cleaning to avoid the NA variables, we also checked the proportion of cleaned dataset comparing to original dataset, combined two separate dataset as one while avoiding the extra column, and print the descriptor portion of final cleaned dataset.
+```{r}
+#change the variable as date
+chi_airbnb$last_review=as.Date(chi_airbnb$last_review)
+nyc_airbnb$last_review=as.Date(nyc_airbnb$last_review)
+
+#clean the data to avoid NA variables
+na_prop = function(x) {
+  mean(is.na(x))
+}
+
+# create dataset without columns containing more than 33% NAs
+chi_clean = na.omit(chi_airbnb[, !sapply(chi_airbnb, na_prop) > 0.33])
+nyc_clean = na.omit(nyc_airbnb[, !sapply(nyc_airbnb, na_prop) > 0.33])
+
+#proporation of cleaned datasets comparing to original datasets
+nrow(chi_clean)/nrow(chi_airbnb)
+nrow(nyc_clean)/nrow(nyc_airbnb)
+
+#deselct a column to match the two seperate datasets
+nyc_clean=select(nyc_clean, -5)
+#combine two datasets together for easier analysis
+airbnb<-rbind(nyc_clean, chi_clean)
+airbnb$longitude=as.double(airbnb$longitude)
+#print the descriptor portion of final cleaned dataset
+str(airbnb)
+```
+
+***
+
+## Modeling
+
+We wanted to create a new variable based on the latitude and longitude variables, so we performed a data validation check and found out there are no coordinates misplaced.
+```{r}
+#checking the latitude and longitude are formatted correctly
+which(str_detect(airbnb$latitude, "4\\d+")==FALSE)
+which(str_detect(airbnb$longitude, "\\-\\d+")==FALSE)
+```
+
+We used the coordinates of Time Square, Central Park, Millennium Park and Willies Tower to find out the distance from each airbnb location to common attractions. 
+
+```{r}
+R <- 6371e3
+#calculate distance from NYC Airbnb locations to time square
+latitude2 <- rep(40.758896, nrow(nyc_clean))
+longitude2 <- rep(-73.985130, nrow(nyc_clean))
+phi1 <- latitude2 * pi/180 #latitude in degrees now converted to radians
+phi2 <- latitude2 * pi/180 #latitude in degrees now converted to radians
+delphi <- (latitude2-nyc_clean$latitude) * pi/180
+dellam <- (longitude2-nyc_clean$longitude) * pi/180
+a <- (sin(delphi/2))^2 + cos(phi1) * cos(phi2) * (sin(dellam/2))^2
+cc <-2 * atan2(sqrt(a), sqrt(1-a))
+distotime<-R * cc / 1609
+
+#calculate distance from NYC Airbnb locations to Central Park
+latitude3 <- rep(40.785091, nrow(nyc_clean))
+longitude3 <- rep(-73.968285, nrow(nyc_clean))
+phi3 <- latitude3 * pi/180 #latitude in degrees now converted to radians
+phi4 <- latitude3 * pi/180 #latitude in degrees now converted to radians
+delphi <- (latitude3-nyc_clean$latitude) * pi/180
+dellam <- (longitude3-nyc_clean$longitude) * pi/180
+a <- (sin(delphi/2))^2 + cos(phi3) * cos(phi4) * (sin(dellam/2))^2
+cc <-2 * atan2(sqrt(a), sqrt(1-a))
+distocen<-R * cc / 1609
+#calculate the mean of distance to common attractions in NYC
+nyc_clean$distance2comattr <- (distotime+distocen)/2
+
+#calculate distance from CHI airbnb location to Millennium Park
+latitude3 <- rep(41.882702, nrow(chi_clean))
+longitude3 <- rep(-87.619392, nrow(chi_clean))
+phi1 <- latitude3 * pi/180 #latitude in degrees now converted to radians
+phi2 <- latitude3 * pi/180 #latitude in degrees now converted to radians
+delphi <- (latitude3-chi_clean$latitude) * pi/180
+dellam <- (longitude3-chi_clean$longitude) * pi/180
+a <- (sin(delphi/2))^2 + cos(phi1) * cos(phi2) * (sin(dellam/2))^2
+cc <-2 * atan2(sqrt(a), sqrt(1-a))
+distomil<-R * cc / 1609
+
+#calculate distance from CHI Airbnb locations to Willis Tower
+latitude3 <- rep(41.878876, nrow(chi_clean))
+longitude3 <- rep(-87.635918, nrow(chi_clean))
+phi1 <- latitude3 * pi/180 #latitude in degrees now converted to radians
+phi2 <- latitude3 * pi/180 #latitude in degrees now converted to radians
+delphi <- (latitude3-chi_clean$latitude) * pi/180
+dellam <- (longitude3-chi_clean$longitude) * pi/180
+a <- (sin(delphi/2))^2 + cos(phi1) * cos(phi2) * (sin(dellam/2))^2
+cc <-2 * atan2(sqrt(a), sqrt(1-a))
+distowil<-R * cc / 1609
+
+#calculate the mean of distance to common attractions in CHI
+chi_clean$distance2comattr <- (distomil+distowil)/2
+
+#combine two dataset with one more column added 
+airbnb_new<-rbind(nyc_clean, chi_clean)
+
+```
+
+We wanted to find out whether proximity to popular attractions would affect other response variables such as number of people choosing to live here(reviews_per_month) and price, etc. A new variable named "distance2comattr" is created for convenience.
+
+R-squared value for Review per month and distance:
+```{r}
+mod_1<-lm(reviews_per_month~distance2comattr, data=airbnb_new)
+summary(mod_1)$adj
+```
+R-squared value for price and distance:
+```{r}
+mod_2<-lm(price~distance2comattr, data=airbnb_new)
+summary(mod_2)$adj
+```
+
+The values of adjusted R-squared is low, which indicates there are barely any interaction between these variables. We could say that the distance to common attractions does not directly affect the Airbnb's number of reviews per month(how many people chose to live here) or price. 
+
+To find out which host is the busiest and see why, we first tried to find out which apt got most reviews per month and list out its apartment type and several import information. 
+```{r}
+a<-airbnb_new%>%
+  group_by(host_id)
+#find out which apt got most reviews per month
+kable(a[which.max(airbnb_new$reviews_per_month),])
+busy=a[which(a$host_id==244361589),]
+#find out room types of this particular host
+table(busy$room_type)
+#table of important data
+c("min"=min(busy$price), 'max'=max(busy$price), "mean"=mean(busy$price), 'distance'=mean(busy$distance2comattr))
+```
+
+**Similarities and Difference between NYC and CHI**
+
+To find out the similarities and differences between NYC and CHI airbnb, we listed out the summary of price in CHI and NYC, barplot of distance to common attractions, room type, and price based on different room type.
+```{r, warning=FALSE, message=FALSE}
+summary(chi_clean$price)
+summary(nyc_clean$price)
+par(mfrow=c(1,2))
+hist(chi_clean$distance2comattr, main='CHI dis freq', xlab="distance")
+hist(nyc_clean$distance2comattr, main='NYC dis freq', xlab="distance")
+
+chi_dis<-ggplot(data=chi_clean, aes(x=distance2comattr, fill=room_type)) +
+    geom_histogram()+scale_fill_manual(values=c("orange", "black", "blue", "green"))
+nyc_dis<-ggplot(data=nyc_clean, aes(x=distance2comattr, fill=room_type)) +
+    geom_histogram()+scale_fill_manual(values=c("orange", "blue", "green"))
+
+ggarrange(chi_dis, nyc_dis, 
+          labels = c("CHI", "NYC"),
+          ncol = 2, nrow = 1)
+
+chi_pri<-ggplot(data=chi_clean, aes(x=price, fill=room_type)) +
+    geom_histogram()+scale_fill_manual(values=c("orange", "black", "blue", "green"))+
+  coord_cartesian(ylim=c(0,1000), xlim=c(0,2500))
+nyc_pri<-ggplot(data=nyc_clean, aes(x=price, fill=room_type)) +
+    geom_histogram()+scale_fill_manual(values=c("orange", "blue", "green"))+
+  coord_cartesian(ylim=c(0,1000), xlim=c(0,2500))
+ggarrange(chi_pri, nyc_pri, 
+          labels = c("CHI", "NYC"),
+          ncol = 2, nrow = 1)
+```
+
+
+***
+
+# Results
+
+The values of adjusted R-squared are low, which indicates there are barely any interaction between distance, number of reviews per month, and price. We could conclude that the distance to common attractions does not directly affect the Airbnb's number of reviews per month(how many people chose to live here) or price. 
+
+
+We found "Row NYC" is the busiest host. "Row NYC" holds 6 places in NYC and all of them are private room. "Row NYC"'s places average only 1.14 miles from the common attractions in NYC and priced at around 141 per day. We conclude that high performance cost ratio is what makes "Row NYC" popular in NYC. 
+
+For the difference, we first found out the NYC airbnb provides people with more choices and is generally more expensive than CHI airbnb. Both cities have the options of "entire home/apt", "private room", and "shared room", while Chicago airbnb has the extra option of "hotel room". Both cities' price histograms tend to be right skewed and they all have much more types of "entire home/apt" compared to other types.
+
+***
+
+# Appendix
+
+```{r}
+sort(table(nyc_clean$neighbourhood), decreasing = TRUE)[1]
+head(sort(airbnb_new$price, decreasing = T),20)
+
+library(ggplot2)
+plot1<-ggplot(data=airbnb_new, aes(x=distance2comattr, y=price, colour=room_type))+geom_point(colour="red", pch=20, alpha=0.3)+geom_smooth(method="lm", se=F)
+plot2<-ggplot(data=airbnb_new, aes(x=distance2comattr, y=price, colour=room_type))+geom_point(colour="red", pch=20, alpha=0.3)+geom_smooth(method="lm", se=F)+coord_cartesian(ylim=c(0,2000), xlim=c(0,20))
+ggarrange(plot1, plot2, 
+          ncol = 2, nrow = 1)
+
+plot3<-ggplot(data=airbnb_new, aes(x=distance2comattr, y=reviews_per_month, colour=room_type))+geom_point(colour="red", pch=20, alpha=0.3)+geom_smooth(method="lm", se=F)
+plot4<-ggplot(data=airbnb_new, aes(x=distance2comattr, y=reviews_per_month, colour=room_type))+geom_point(colour="red", pch=20, alpha=0.3)+geom_smooth(method="lm", se=F)+coord_cartesian(ylim=c(0,20), xlim=c(0,25))
+ggarrange(plot3, plot4, 
+          ncol = 2, nrow = 1)
+```
+
+
+
+
+
+
